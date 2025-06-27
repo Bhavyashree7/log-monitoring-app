@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Log Monitoring App</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 10px;
+      gap: 10px;
+    }
+
+    .controls button {
+      padding: 6px 12px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .controls button:hover {
+      background-color: #0056b3;
+    }
+
+    #plainTextView {
+      background: #f0f0f0;
+      padding: 10px;
+      white-space: pre-wrap;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th,
+    td {
+      border: 1px solid #ccc;
+      padding: 8px;
+    }
+
+    th {
+      background-color: #f2f2f2;
+    }
+
+    .INFO {
+      background-color: #e8f5e9;
+    }
+
+    .WARNING {
+      background-color: #fff3cd;
+    }
+
+    .ERROR {
+      background-color: #f8d7da;
+    }
+
+    #tableView {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Log Monitoring App</h2>
+
+  <div class="controls">
+    <button id="downloadLog">Download Report</button>
+    <button id="toggleView">Switch to Table View</button>
+  </div>
+
+  <div id="plainTextView"></div>
+
+  <table id="tableView">
+    <thead>
+      <tr>
+        <th>PID</th>
+        <th>Description</th>
+        <th>Duration (min)</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script type="module">
+    import { processLogData, extractTableRows, filterLogLines } from './app.js';
+
+    const plainView = document.getElementById("plainTextView");
+    const tableView = document.getElementById("tableView");
+    const tableBody = document.querySelector("#tableView tbody");
+    const toggleButton = document.getElementById("toggleView");
+    const downloadBtn = document.getElementById("downloadLog");
+    let currentView = "text";
+
+    let allResults = [];
+    let filteredLogs = [];
+
+    fetch('./logs.log')
+      .then(res => res.text())
+      .then(text => {
+        allResults = processLogData(text);
+        plainView.textContent = allResults.join("\n");
+
+        filteredLogs = filterLogLines(allResults);
+
+        const tableRows = extractTableRows(allResults);
+        for (const row of tableRows) {
+          const tr = document.createElement("tr");
+          tr.className = row.Status;
+          tr.innerHTML = `
+            <td>${row.PID}</td>
+            <td>${row.Description}</td>
+            <td>${row['Duration (min)'] ?? '-'}</td>
+            <td>${row.Status}</td>
+          `;
+          tableBody.appendChild(tr);
+        }
+      });
+
+    toggleButton.addEventListener("click", () => {
+      if (currentView === "text") {
+        plainView.style.display = "none";
+        tableView.style.display = "table";
+        currentView = "table";
+        toggleButton.textContent = "Switch to Text View";
+      } else {
+        plainView.style.display = "block";
+        tableView.style.display = "none";
+        currentView = "text";
+        toggleButton.textContent = "Switch to Table View";
+      }
+    });
+
+    downloadBtn.addEventListener("click", async () => {
+      if (currentView === "text") {
+        const blob = new Blob([filteredLogs.join("\n")], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "log.log";
+        link.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const XLSX = await import("https://cdn.sheetjs.com/xlsx-latest/package/xlsx.mjs");
+        const rows = Array.from(tableBody.querySelectorAll("tr")).map(tr => {
+          const tds = tr.querySelectorAll("td");
+          return {
+            PID: tds[0].textContent,
+            Description: tds[1].textContent,
+            "Duration (min)": tds[2].textContent,
+            Status: tds[3].textContent
+          };
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "LogReport");
+        XLSX.writeFile(workbook, "log-report.xlsx");
+      }
+    });
+  </script>
+</body>
+
+</html>
